@@ -6,7 +6,7 @@ The benchmark is worthless until the baseline estimator is trustworthy. Hardware
 
 1. **Truth simulator** — trajectory generators (line, circle, figure-eight) + unicycle kinematics, verified against analytic invariants (circle radius = v/omega, line has zero cross-track error).
 2. **Sensors** — odometry (noise + slowly-drifting bias) and absolute-position (noisier per-tick, but non-drifting), verified against their configured noise statistics.
-3. **Baseline EKF** — state `[x, y, theta]`, predict/update/NIS gate, compared against an odometry-only dead-reckoning baseline on the *same* measurement stream. **Acceptance gate: EKF ATE must be lower than dead-reckoning ATE on a circle trajectory under default noise.** Nothing hardware-related is meaningful until this passes.
+3. **Baseline EKF** — state `[x, y, theta]`, predict/update/NIS gate, compared against an odometry-only dead-reckoning baseline on the *same* measurement stream. **Acceptance gate: over a fixed set of 20 seeds, on a circle trajectory under default noise, the EKF's RMSE ATE must be lower than dead-reckoning's RMSE ATE on every one of the 20 seeds.** Fixed seeds make this deterministic in CI. Nothing hardware-related is meaningful until this passes.
 4. **Hardware execution model** — latency, jitter, deadline policy (MVP: skip late update), wired in *during* the simulation loop so a missed deadline actually changes what the EKF sees.
 5. **Precision model** — software quantization (float32, Q24.8, Q16.16, Q12.20 at minimum), applied at the state/covariance level first.
 6. **Architecture comparison** — named hardware profiles (CPU-only, fixed-point CPU, matrix accelerator, EKF-update accelerator) evaluated on both hardware and estimator metrics together.
@@ -20,8 +20,9 @@ The benchmark is worthless until the baseline estimator is trustworthy. Hardware
 - This *is* the Commit 4 acceptance test, run once as a sanity check and again as an automated test.
 
 ### Experiment B — Latency sweep (RQ1)
-- Sweep: update latency in `{0, 1, 2, 5, 10, 20}` ms, precision fixed at float64, deadline policy = skip late update.
-- Expected: higher latency -> more missed corrections -> higher RMSE ATE.
+- Sweep: update latency in `{0, 1, 2, 5, 7, 9, 10, 20}` ms, precision fixed at float64, deadline policy = skip late update.
+- The deadline (`dt` = 10 ms at the default 100 Hz tick rate) applies to the *total* per-tick compute budget: predict latency + update latency must together fit within `dt`, not update latency alone. Predict latency is held fixed and small in this sweep so update latency is the only thing moving.
+- The 10 ms and 20 ms points are expected to saturate: at that point every update misses the deadline, the policy skips every correction, and the run degrades to permanent predict-only (dead reckoning). Both points should land at effectively the same RMSE ATE — that saturation *is* the result (total correction starvation), not a bug. The 7 ms and 9 ms points exist specifically to resolve the transition curve between "mostly fine" and "fully saturated" before the cliff.
 - Plot: update latency (x) vs. RMSE ATE (y); secondary plot vs. missed-update rate.
 
 ### Experiment C — Update-rate sweep (supporting RQ1)
@@ -52,10 +53,10 @@ Experiments F and G are real and planned, but are explicitly sequenced after A-E
 duration = 30 s, dt = 0.01 s (100 Hz), seeds = 50-100
 trajectory = circle or figure-eight, initial state = [0, 0, 0]
 EKF state = [x, y, theta], gate_threshold = 5.991 (95%, 2 dof)
-absolute-position update rate = 10-20 Hz
+absolute-position update rate = 10 Hz (default; experiments may override explicitly)
 deadline policy = skip late update
 ```
 
 ## Failure conditions (for mission-level success/failure metrics)
 
-A run is marked failed if: ATE exceeds 2.0 m, drift exceeds 3.0 m, the state or covariance contains NaN/Inf, the covariance becomes non-positive-definite, or the NIS gate rejection rate exceeds 80%. These thresholds are tuned for this toy 2D world and may be revisited once real distributions are observed.
+A run is marked failed if any of the following are true at **any single tick** (instantaneous, not aggregate — this models mission failure, which is triggered by the worst moment, not the average): instantaneous ATE_t exceeds 2.0 m, instantaneous drift exceeds 3.0 m, the state or covariance contains NaN/Inf, or the covariance becomes non-positive-definite. The NIS gate rejection rate is evaluated over the whole run (it's not meaningful per-tick) and fails the run if it exceeds 80%. RMSE ATE and RMSE RPE remain reported separately as aggregate accuracy summaries — they are not failure criteria. These thresholds are tuned for this toy 2D world and may be revisited once real distributions are observed.

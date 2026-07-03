@@ -16,7 +16,7 @@ Working hypothesis: occasional missed updates are likely more damaging to locali
 
 **How much numeric precision can be reduced before covariance behavior, NIS gating, and localization accuracy become unstable?**
 
-Hardware knobs: float64, float32, fixed-point-like Q24.8 / Q16.16 / Q12.20, mixed precision, quantized matrix operations.
+Hardware knobs: float64, float32, fixed-point-like Q24.8 / Q16.16 / Q12.20 / Q8.8, mixed precision, quantized matrix operations.
 
 Estimator outcomes: ATE, RPE, covariance sanity (trace, determinant, positive-definiteness), NIS distribution, false-reject rate, false-accept rate, divergence count.
 
