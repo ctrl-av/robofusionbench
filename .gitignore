@@ -28,3 +28,6 @@ obj_dir/
 .vscode/
 .idea/
 .DS_Store
+
+# Local machine-specific tool settings (not shared)
+.claude/settings.local.json
